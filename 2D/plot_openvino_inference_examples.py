@@ -1,4 +1,4 @@
-#
+
 # -*- coding: utf-8 -*-
 #
 # Copyright (c) 2019 Intel Corporation
@@ -30,6 +30,8 @@ import argparse
 from dataloader import DatasetGenerator, get_decathlon_filelist
 
 from openvino.inference_engine import IECore
+from openvino.runtime import Core
+from openvino.runtime import Layout, set_batch
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -90,13 +92,13 @@ def calc_soft_dice(target, prediction, smooth=0.0001):
     return coef
 
 
-def plot_results(ds, batch_num, png_directory, exec_net, input_layer_name, output_layer_name):
+def plot_results(ds, batch_num, png_directory, compiled_model, input_layer_name, output_layer_name):
     
     plt.figure(figsize=(10,10))
 
     img, msk = next(ds.ds)
-
     idx = np.argmax(np.sum(np.sum(msk[:,:,:,0], axis=1), axis=1)) # find the slice with the largest tumor
+    image = img[[idx]]
 
     plt.subplot(1, 3, 1)
     plt.imshow(img[idx, :, :, 0], cmap="bone", origin="lower")
@@ -111,11 +113,8 @@ def plot_results(ds, batch_num, png_directory, exec_net, input_layer_name, outpu
     print("Index {}: ".format(idx), end="")
 
     # Predict using the OpenVINO model
-    # NOTE: OpenVINO expects channels first for input and output
-    # So we transpose the input and output
     start_time = time.time()
-    res = exec_net.infer({input_layer_name: np.transpose(img[[idx]], [0,3,1,2])})
-    prediction = np.transpose(res[output_layer_name], [0,2,3,1])    
+    prediction = compiled_model(image)[output_key]
     print("Elapsed time = {:.4f} msecs, ".format(1000.0*(time.time()-start_time)), end="")
     
     plt.imshow(prediction[0,:,:,0], cmap="bone", origin="lower")
@@ -131,26 +130,44 @@ def plot_results(ds, batch_num, png_directory, exec_net, input_layer_name, outpu
 if __name__ == "__main__":
 
     model_filename = os.path.join(args.output_path, args.inference_filename)
-
     trainFiles, validateFiles, testFiles = get_decathlon_filelist(data_path=args.data_path, seed=args.seed, split=args.split)
-
     ds_test = DatasetGenerator(testFiles, batch_size=128, crop_dim=[args.crop_dim,args.crop_dim], augment=False, seed=args.seed)
     
     if args.device != "CPU":
         precision="FP16"
     else:
         precision = "FP32"
+    
     path_to_xml_file = "{}.xml".format(os.path.join(args.output_path, precision, args.inference_filename))
     path_to_bin_file = "{}.bin".format(os.path.join(args.output_path, precision, args.inference_filename))
 
-    ie = IECore()
-    net = ie.read_network(model=path_to_xml_file, weights=path_to_bin_file)
+    # Load the Model
+    ie = Core()
+    model = ie.read_model(path_to_xml_file)
+    # model.reshape([-1, -1])
+    
+    # Dynamic Input
+    model.get_parameters()[0].set_layout(Layout("N..."))
+    set_batch(model,1)
+    compiled_model = ie.compile_model(model=model, device_name="CPU")
+    print("compiled_model done!")
 
-    input_layer_name = next(iter(net.input_info))
-    output_layer_name = next(iter(net.outputs))
-    print("Input layer name = {}\nOutput layer name = {}".format(input_layer_name, output_layer_name))
+    # Get Model Information
+    input_key = compiled_model.input(0)
+    output_key = compiled_model.output(0)
+    network_input_shape = input_key.shape
+    
+    input_layer_name = input_key
+    output_layer_name = output_key
+    print("\nInput layer name = {}\n\nOutput layer name = {}".format(input_key, output_key))
+    print("\nModel input shape: ", network_input_shape)
 
-    exec_net = ie.load_network(network=net, device_name=args.device, num_requests=1)
+    # ie = IECore()
+    # net = ie.read_network(model=path_to_xml_file, weights=path_to_bin_file)
+    # input_layer_name = next(iter(net.input_info))
+    # output_layer_name = next(iter(net.outputs))
+    # print("Input layer name = {}\nOutput layer name = {}".format(input_layer_name, output_layer_name))
+    # exec_net = ie.load_network(network=net, device_name=args.device, num_requests=1)
 
     # Create output directory for images
     png_directory = args.output_pngs
@@ -158,4 +175,4 @@ if __name__ == "__main__":
         os.makedirs(png_directory)
 
     for batch_num in range(10):
-        plot_results(ds_test, batch_num, png_directory, exec_net, input_layer_name, output_layer_name)
+        plot_results(ds_test, batch_num, png_directory, compiled_model, input_layer_name, output_layer_name)

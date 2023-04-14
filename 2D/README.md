@@ -103,21 +103,18 @@ To train the model in Auto mixed precision(AMP) BF16, we can add AMP argument if
 1. [OpenVINO&trade;](https://www.youtube.com/watch?v=kY9nZbX1DWM) - At the end of `train.py` you should see instructions on how to [convert the model](https://docs.openvinotoolkit.org/latest/openvino_docs_MO_DG_prepare_model_convert_model_Convert_Model_From_TensorFlow.html) for use with the [Intel&reg; Distribution of the OpenVINO&trade; toolkit](https://software.intel.com/content/www/us/en/develop/tools/openvino-toolkit.html). Once you have OpenVINO&trade; installed, you can run a command like the one below to create an OpenVINO&trade; intermediate representation (IR) of the TensorFlow model. If you are using the [Intel&reg; Neural Compute Stick&trade; (NCS2)](https://ark.intel.com/content/www/us/en/ark/products/140109/intel-neural-compute-stick-2.html), simply replace the `FP32` with `FP16` in the command below:
 
 ```
-source /opt/intel/openvino_2021/bin/setupvars.sh
-python $INTEL_OPENVINO_DIR/deployment_tools/model_optimizer/mo_tf.py \
-       --saved_model_dir ./output/2d_unet_decathlon \
-       --input_shape [1,128,128,4] \
-       --model_name 2d_unet_decathlon \
-       --output_dir ./output/FP32 \
-       --data_type FP32
+source openvino_env/bin/activate
+mo --saved_model_dir ./output/2d_unet_decathlon \
+   --output_dir ./output/FP32 \
+   --data_type FP32
 ```
 
-This has been tested with the [Intel&reg; Distribution of the OpenVINO&trade; toolkit](https://software.intel.com/content/www/us/en/develop/tools/openvino-toolkit.html) 2021.2.
+This has been tested with the [Intel&reg; Distribution of the OpenVINO&trade; toolkit](https://software.intel.com/content/www/us/en/develop/tools/openvino-toolkit.html) 2022.2.
 
 2. Once you have the OpenVINO&trade; IR model, you can run the command:
 
 ```
-python plot_openvino_inference_examples.py --data_path $DECATHLON_ROOT_DIRECTORY --device CPU
+python plot_openvino_inference_examples.py --data_path $DECATHLON_ROOT_DIRECTORY --output_path output/ --inference_filename saved_model --device CPU
 ```
 
 It should give you the same output as the `plot_tf_inference_examples.py` but execute faster on the same CPU. You can try the options `--device GPU` or `--device=MYRIAD` if you have the [Intel&reg; integrated GPU](https://ark.intel.com/content/www/us/en/ark/products/graphics/197532/intel-iris-plus-graphics.html) or [Intel&reg; Neural Compute Stick&trade; (NCS2)](https://ark.intel.com/content/www/us/en/ark/products/140109/intel-neural-compute-stick-2.html) installed on your computer.
